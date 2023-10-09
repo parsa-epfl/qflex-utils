@@ -21,13 +21,15 @@ fn main() {
 
 
     // Create a main Server Threads
-    let server = SyncServer::new(String::from("8080"));
-    let _handler = thread::spawn(move || {
-       let _ = server.main();
-    });
+    // let server = SyncServer::new(String::from("8080"));
+    // let _handler = thread::spawn(move || {
+    //    let _ = server.main();
+    // });
 
-
-    shell.run();
+    let _ = SyncServer::new(
+        "/var/run/ss".to_string(), 10000)
+        .main();
+    // shell.run();
 }
 
 

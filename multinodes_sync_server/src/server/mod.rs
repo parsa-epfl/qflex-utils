@@ -1,9 +1,7 @@
-use tokio::task;
-use tokio::net::{UnixListener, UnixStream};
+use std::path::{Path, PathBuf};
+use std::thread;
+use std::os::unix::net::{UnixStream, UnixListener};
 use std::fs;
-use std::io::ErrorKind;
-use std::thread::sleep;
-use std::time::Duration;
 
 enum SyncMessage {
     HELLO,
@@ -14,7 +12,7 @@ pub struct SyncServer {
 
     budget: u32,
     nb_of_slave: u8,
-    socket_path: &'static str,
+    socket_path: PathBuf,
     counter: u64,
 
 }
@@ -24,55 +22,48 @@ impl SyncServer {
         Self {
             budget,
             nb_of_slave: 0,
-            socket_path: socket_path.trim(),
+            socket_path: PathBuf::from(socket_path),
             counter: 0
         }
     }
 
-    fn spawn(&self) {
-        // Spawn X treads for the X salves
-        for slave_index in 0..self.nb_of_slave {
-            tokio::spawn(async move {
 
-                let ret =
-                    match ret {
+    // fn spawn(&self) {}
+    pub fn main(&self) -> std::io::Result<()> {
+        // let socket = match UnixStream::connect(self.socket_path.to_owned())
+        // {
+        //     Ok(s) => s,
+        //     Err(e) =>
+        //     {
+        //         panic!("Couldn't connect: {}", e.kind());
+        //     },
+        // };
 
-                    }
-
-            });
-        }
-    }
-
-    pub async fn main(&self) {
-
-        let mut sleep_time : u64 = 0;
-
-        self.spawn();
-
-        for slave_index in 0..self.nb_of_slave {
-            let s2m_path = format!("{}/s2m_{:0>2}", self.socket_path, slave_index);
-            let _ = fs::remove_file(&s2m_path);
-        }
-
-        for slave_index in 0..self.nb_of_slave {
-            let s2m_path = format!("{}/s2m_{:0>2}", self.socket_path, slave_index);
-            let mut connection_status = UnixStream::connect(&s2m_path).await;
-            
-
-            while let Err(e) = connection_status {
-                match e.kind() {
-                    ErrorKind::NotFound => {
-                        println!("Socket not found, retrying...in {}", sleep_time);
-                        sleep(Duration::from_secs(sleep_time)).await;
-                    }
-                    other => todo!(),
-
-                }
-
-            }
+        if self.socket_path.exists() {
+            fs::remove_file(&self.socket_path).unwrap();
         }
 
 
+        let stream = match UnixListener::bind(&self.socket_path) {
+            Err(_) => panic!("failed to bind socket"),
+            Ok(stream) => stream,
+        };
 
+        println!("Server started, waiting for clients");
+
+        // Iterate over clients, blocks if no client available
+        for mut client in stream.incoming() {
+                println!("Client said: {}", ???);
+        }
+
+        // let listener = UnixListener::bind(&self.socket_path)?;
+        // loop {
+        //     match listener.accept() {
+        //         Ok((socket, addr)) => println!("Got a client: {addr:?}"),
+        //         Err(e) => println!("accept function failed: {e:?}"),
+        //     }
+        // }
+
+        Ok(())
     }
 }
