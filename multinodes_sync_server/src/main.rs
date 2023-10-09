@@ -1,15 +1,15 @@
 // @inspired from https://gitlab.com/john_t/shellfish
-//
-// mod shell;
-//
-// use shell_loop::command::Command;
-// use crate::shell_loop::Shell;
 
+
+use std::thread;
 
 mod shell;
+mod server;
 
 use shell::Shell;
 use shell::command::Command;
+use server::SyncServer;
+
 
 fn main() {
 
@@ -18,6 +18,13 @@ fn main() {
     shell.cmds.insert(
         "test", Command::new("Test smth".to_string(), test)
     );
+
+
+    // Create a main Server Threads
+    let server = SyncServer::new(String::from("8080"));
+    let _handler = thread::spawn(move || {
+       let _ = server.main();
+    });
 
 
     shell.run();
