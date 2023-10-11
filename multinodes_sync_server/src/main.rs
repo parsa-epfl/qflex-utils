@@ -23,7 +23,7 @@ fn main() {
 
 
 
-    let _ = SyncServer::new("/run/ss".to_string(), 10000).listen();
+    let _ = SyncServer::new("/run/ss".to_string(), 10000, 2).listen();
     // match server.run() {
     //     Ok(_) => (),
     //     Err(e) => eprintln!("Server error: {}", e),
