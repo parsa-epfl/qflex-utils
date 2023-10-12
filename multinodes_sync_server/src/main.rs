@@ -18,10 +18,7 @@ fn main() {
     shell.cmds.insert(
         "test", Command::new("Test smth".to_string(), test)
     );
-
-
-
-
+    
 
     let _ = SyncServer::new("/run/ss".to_string(), 10000, 2).listen();
     // match server.run() {

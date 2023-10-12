@@ -1,4 +1,3 @@
-use std::collections::hash_set::Union;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::os::unix::net::{UnixStream, UnixListener};
@@ -6,23 +5,27 @@ use std::fs;
 use std::io::Write;
 use std::thread::{JoinHandle, Thread};
 
-use bincode::{config, Encode, };
+use bincode::config;
+use bincode::{Encode,
+    config::{
+        Configuration,
+        BigEndian,
+        Varint,
+    }
+};
+
 use std::sync::mpsc::sync_channel;
-use std::sync::{Arc, Mutex, Condvar};
+use std::sync::{Arc, Mutex, Condvar, Barrier};
 
 
-const MAX_FILE_NAME_BYTES_SIZE: usize = 255;
-//
-// const STOP_ID   : usize = 1;
-// const START_ID  : usize = 2;
-// const SNAP_ID   : usize = 3;
-// const NOFENCE_ID: usize = 4;
-// const FENCE_ID  : usize = 5;
-// const TERMINATE : usize = 6;
+const MAX_FRAME_BYTE_SIZE: usize = 64;
+const SERIALIZE_CONFIG: Configuration<BigEndian, Varint> =  config::standard().with_big_endian().with_variable_int_encoding();
+
 
 #[derive(Encode, PartialEq, Debug)]
 enum SyncMessageType {
-    Stop(),
+    Null,
+    Stop,
     Start,
     Snap(String),
     NoFence,
@@ -30,63 +33,20 @@ enum SyncMessageType {
     Terminate,
 }
 
-// #[repr(C)]
-// union SyncMessagePayload {
-//     filename: Vec<u8>,
-//     budget: u64,
-// }
-//
-// impl SyncMessagePayload {}
-
-// struct SyncMessage {
-//     id: u8,
-//     payload: Option<SyncMessagePayload>
-// }
-
-// impl SyncMessage
-// {
-//     pub fn new(mess_type: SyncMessageType) -> Self {
-//
-//         let mut id: u8;
-//         let mut payload: Option<SyncMessagePayload> = None;
-//
-//
-//         match mess_type {
-//             SyncMessageType::Stop => id = 1,
-//             SyncMessageType::Start => id = 2,
-//             SyncMessageType::Snap(name) =>  {
-//                 id = 3;
-//                 payload = Some(SyncMessagePayload { filename: > });
-//             },
-//             SyncMessageType::NoFence => id = 4,
-//             SyncMessageType::Fence(budget) => {
-//                 id = 5;
-//                 payload = Some(SyncMessagePayload { budget });
-//             },
-//             SyncMessageType::Terminate => id = 6,
-//         };
-//
-//
-//         Self {
-//             id,
-//             payload,
-//         }
-//     }
-// }
-
+#[derive(Clone)]
 pub struct SyncServer {
-    budget: u32,
-    nb_of_slave: u8,
+    budget: u64,
+    nb_of_slave: usize,
     socket_path: PathBuf,
 
-    // socket_ready_lock: Arc<()>,
+    // socket_ready_lock: Arc<(Mutex<u8>, Condvar)>,
+    // socket_barrier: Arc<Barrier>,
 
-    // communication_channels:
 }
 
 impl SyncServer {
 
-    pub fn new(socket_path: String, budget: u32, nb_of_slave: u8) -> Self
+    pub fn new(socket_path: String, budget: u64, nb_of_slave: usize) -> Self
     {
 
 
@@ -95,7 +55,8 @@ impl SyncServer {
         Self {
             budget,
             nb_of_slave,
-            //socket_ready_lock: Arc::new((Mutex::new(0), Condvar::new())),
+            // socket_ready_lock: Arc::new((Mutex::new(0), Condvar::new())),
+            // socket_barrier: Arc::new(Barrier::new(nb_of_slave)),
             socket_path: PathBuf::from(socket_path),
         }
     }
@@ -119,15 +80,23 @@ impl SyncServer {
         println!("Server started, waiting for clients at {}", self.socket_path.display());
 
 
-        let mut thread_handles: Vec<JoinHandle<_>> = vec![];
+        let mut thread_handles: Vec<JoinHandle<_>> = Vec::with_capacity(self.nb_of_slave);
 
+        let  socket_barrier = Arc::new(Barrier::new(self.nb_of_slave));
 
         for stream in listener.incoming() {
+
+            let local_thread_ready_lock = Arc::clone(&socket_barrier);
+            let budget = self.budget;
+
             match stream
             {
                 Ok(stream) => thread_handles.push(
                     thread::spawn(
-                        move || { SyncServer::handle_client(stream); }
+                        move || { SyncServer::handle_client(
+                            stream,
+                            local_thread_ready_lock,
+                            budget); }
                     )
                 ),
                 Err(err) => eprintln!("Ouch, problem in incoming request, ({})", err),
@@ -141,15 +110,23 @@ impl SyncServer {
         Ok(())
     }
 
-    fn handle_client(mut stream: UnixStream)
+    fn handle_client(
+        mut stream: UnixStream,
+        ready_lock: Arc<Barrier>,
+        starting_budget: u64)
     {
-        // Send Stop anyway
-        SyncServer::send_message(&mut stream, SyncMessageType::Fence(20000));
+        // Send Stop anyway, then set budget
+        SyncServer::send_message(&mut stream, SyncMessageType::Stop);
+        SyncServer::send_message(&mut stream, SyncMessageType::Fence(starting_budget));
 
 
 
         loop {
+            println!("Entering loop, ... now wait");
+            ready_lock.wait();
+            println!("After loop");
             // Wait channel message
+            // receive.stuff()
         }
 
 
@@ -164,20 +141,9 @@ impl SyncServer {
     fn send_message(stream: &mut UnixStream, message: SyncMessageType)
     {
 
-
-        // Encoding an unsigned integer v (of any type excepting u8) works as follows:
-        //
-        //     If u < 251, encode it as a single byte with that value.
-        //     If 251 <= u < 2**16, encode it as a literal byte 251, followed by a u16 with value u.
-        //     If 2**16 <= u < 2**32, encode it as a literal byte 252, followed by a u32 with value u.
-        //     If 2**32 <= u < 2**64, encode it as a literal byte 253, followed by a u64 with value u.
-        //     If 2**64 <= u < 2**128, encode it as a literal byte 254, followed by a u128 with value u.
-
-        let c = config::standard().with_big_endian().with_variable_int_encoding();
-
-        let mut encoded_msg: [u8; MAX_FILE_NAME_BYTES_SIZE] = [0; MAX_FILE_NAME_BYTES_SIZE];
-
-        bincode::encode_into_slice(&message, &mut encoded_msg, c).unwrap();
+        //? @see https://github.com/bincode-org/bincode/blob/trunk/docs/spec.md
+        let mut encoded_msg: [u8; MAX_FRAME_BYTE_SIZE] = [0; MAX_FRAME_BYTE_SIZE];
+        bincode::encode_into_slice(&message, &mut encoded_msg, SERIALIZE_CONFIG).unwrap();
         stream.write(&encoded_msg).unwrap();
 
     }
