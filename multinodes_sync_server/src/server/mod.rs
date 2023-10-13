@@ -5,12 +5,13 @@ use std::fs;
 use std::io::Write;
 use std::thread::{JoinHandle, Thread};
 
-use bincode::config;
+use bincode::config::LittleEndian;
 use bincode::{Encode,
     config::{
         Configuration,
         BigEndian,
-        Varint,
+        self,
+        Fixint,
     }
 };
 
@@ -19,7 +20,7 @@ use std::sync::{Arc, Mutex, Condvar, Barrier};
 
 
 const MAX_FRAME_BYTE_SIZE: usize = 64;
-const SERIALIZE_CONFIG: Configuration<BigEndian, Varint> =  config::standard().with_big_endian().with_variable_int_encoding();
+const SERIALIZE_CONFIG: Configuration<LittleEndian, Fixint> =  config::standard().with_little_endian().with_fixed_int_encoding();
 
 
 #[derive(Encode, PartialEq, Debug)]
@@ -29,13 +30,13 @@ enum SyncMessageType {
     Start,
     Snap(String),
     NoFence,
-    Fence(u64),
+    Fence(u32),
     Terminate,
 }
 
 #[derive(Clone)]
 pub struct SyncServer {
-    budget: u64,
+    budget: u32,
     nb_of_slave: usize,
     socket_path: PathBuf,
 
@@ -46,7 +47,7 @@ pub struct SyncServer {
 
 impl SyncServer {
 
-    pub fn new(socket_path: String, budget: u64, nb_of_slave: usize) -> Self
+    pub fn new(socket_path: String, budget: u32, nb_of_slave: usize) -> Self
     {
 
 
@@ -113,21 +114,26 @@ impl SyncServer {
     fn handle_client(
         mut stream: UnixStream,
         ready_lock: Arc<Barrier>,
-        starting_budget: u64)
+        starting_budget: u32)
     {
         // Send Stop anyway, then set budget
-        SyncServer::send_message(&mut stream, SyncMessageType::Stop);
-        SyncServer::send_message(&mut stream, SyncMessageType::Fence(starting_budget));
+        // SyncServer::send_message(&mut stream, SyncMessageType::Stop);
+        println!("Send budget {}", starting_budget);
+        SyncServer::send_message(&mut stream, SyncMessageType::Snap("filename_mais_pas_abuser".to_string()));
+        println!("Send budget {}", 4444);
+        SyncServer::send_message(&mut stream, SyncMessageType::Fence(4444));
+        println!("Send budget {}", 8888);
+        SyncServer::send_message(&mut stream, SyncMessageType::Fence(8888));
 
 
 
-        loop {
-            println!("Entering loop, ... now wait");
-            ready_lock.wait();
-            println!("After loop");
-            // Wait channel message
-            // receive.stuff()
-        }
+        // loop {
+        //     println!("Entering loop, ... now wait");
+        //     ready_lock.wait();
+        //     println!("After loop");
+        //     // Wait channel message
+        //     // receive.stuff()
+        // }
 
 
 
@@ -144,7 +150,10 @@ impl SyncServer {
         //? @see https://github.com/bincode-org/bincode/blob/trunk/docs/spec.md
         let mut encoded_msg: [u8; MAX_FRAME_BYTE_SIZE] = [0; MAX_FRAME_BYTE_SIZE];
         bincode::encode_into_slice(&message, &mut encoded_msg, SERIALIZE_CONFIG).unwrap();
-        stream.write(&encoded_msg).unwrap();
+        match stream.write(&encoded_msg) {
+            Err(e) => println!("Something went somewhat wrong, {}", e.kind()),
+            Ok(o) => println!("Send {} bytes", o),
+        };
 
     }
 

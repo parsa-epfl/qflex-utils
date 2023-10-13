@@ -1,5 +1,5 @@
 
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.25)
 project(DummyUnixSocketClient)
 
 # Specify the C++ standard (CMake 3.1 and above)
@@ -17,7 +17,7 @@ set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_VERBOSE_MAKEFILE False)
 
 # Set the path to the GDB executable
-set(CMAKE_C_COMPILER gcc)
+set(CMAKE_C_COMPILER clang)
 set(CMAKE_CXX_COMPILER g++)
 
 # Specify the compiler flags for debugging
