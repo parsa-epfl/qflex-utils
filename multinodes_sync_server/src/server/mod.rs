@@ -19,7 +19,7 @@ use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex, Condvar, Barrier};
 
 
-const MAX_FRAME_BYTE_SIZE: usize = 64;
+const MAX_FRAME_BYTE_SIZE: usize = 256;
 const SERIALIZE_CONFIG: Configuration<LittleEndian, Fixint> =  config::standard().with_little_endian().with_fixed_int_encoding();
 
 
@@ -118,12 +118,9 @@ impl SyncServer {
     {
         // Send Stop anyway, then set budget
         // SyncServer::send_message(&mut stream, SyncMessageType::Stop);
-        println!("Send budget {}", starting_budget);
         SyncServer::send_message(&mut stream, SyncMessageType::Snap("filename_mais_pas_abuser".to_string()));
-        println!("Send budget {}", 4444);
-        SyncServer::send_message(&mut stream, SyncMessageType::Fence(4444));
-        println!("Send budget {}", 8888);
-        SyncServer::send_message(&mut stream, SyncMessageType::Fence(8888));
+        SyncServer::send_message(&mut stream, SyncMessageType::Snap("euuuh..mec-".to_string()));
+        SyncServer::send_message(&mut stream, SyncMessageType::Start);
 
 
 
