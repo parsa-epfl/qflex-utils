@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::os::unix::net::{UnixStream, UnixListener};
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::thread::{JoinHandle, Thread};
 
 use bincode::config::LittleEndian;
@@ -32,6 +32,7 @@ enum SyncMessageType {
     NoFence,
     Fence(u32),
     Terminate,
+    Done,
 }
 
 #[derive(Clone)]
@@ -117,10 +118,33 @@ impl SyncServer {
         starting_budget: u32)
     {
         // Send Stop anyway, then set budget
-        // SyncServer::send_message(&mut stream, SyncMessageType::Stop);
-        SyncServer::send_message(&mut stream, SyncMessageType::Snap("filename_mais_pas_abuser".to_string()));
-        SyncServer::send_message(&mut stream, SyncMessageType::Snap("euuuh..mec-".to_string()));
-        SyncServer::send_message(&mut stream, SyncMessageType::Start);
+        SyncServer::send_message(&mut stream, SyncMessageType::Stop);
+        SyncServer::send_message(&mut stream, SyncMessageType::Fence(starting_budget));
+
+        let mut done_msg: String = String::with_capacity(8);
+
+        loop {
+
+            println!("[{:?}] Starting to wait", stream);
+            ready_lock.wait();
+
+            SyncServer::send_message(&mut stream, SyncMessageType::Start);
+
+            println!("[{:?}] Starting to wait for DONE", stream);
+            stream.read_to_string(&mut done_msg).unwrap();
+            println!("Received: {}", done_msg);
+
+
+        }
+
+
+
+
+            // match decoded {
+            //     SyncMessageType::Done => println!("Yep that's it"),
+            //     _ => println!("NOP")
+            // }
+
 
 
 
@@ -149,7 +173,7 @@ impl SyncServer {
         bincode::encode_into_slice(&message, &mut encoded_msg, SERIALIZE_CONFIG).unwrap();
         match stream.write(&encoded_msg) {
             Err(e) => println!("Something went somewhat wrong, {}", e.kind()),
-            Ok(o) => println!("Send {} bytes", o),
+            Ok(_) => println!("Send message {:?}", message),
         };
 
     }

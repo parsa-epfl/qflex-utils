@@ -8,7 +8,7 @@
 
 // Define the UNIX socket, the dummy client will try to connect to
 #define SOCKET_PATH "/var/run/ss"
-#ifndef DEBUG
+#ifdef DNDEBUG
     // Unset printf if DEBUG is not defined
     #define printf(x...)
 #endif
@@ -36,20 +36,20 @@ enum Command
  *
  * The Payload is usefull for some communication
  * SNAP:
- *  0           31              63                                 255
- *  +---------+------------+----------------------------+
- *  |    ID     |   STR LEN   |         PAYLOAD STR             |
- *  +---------+------------+----------------------------+
+ * 0           31              63                                 255
+ * +---------+------------+----------------------------+
+ * |    ID     |   STR LEN   |         PAYLOAD STR             |
+ * +---------+------------+----------------------------+
  *
  *  The filename is contained in the payload,
  *  which is not EXPLICITLY null terminated
  *
  * FENCE:
  *
- *  0           31              95
- *  +---------+------------+
- *  |    ID     |   BUDGET    |
- *  +---------+------------+
+ * 0           31              95
+ * +---------+------------+
+ * |    ID     |   BUDGET    |
+ * +---------+------------+
  *
  * The budget is an unsigned 64 bits number
  *
@@ -128,6 +128,63 @@ void parse_message_to_command(struct MessageBuffer* buffer, struct Result* res)
     }
 }
 
+struct Result accept_new_message(int client_socket)
+{
+
+        /**
+         * Create a Message buffer from the incoming pacquet
+         */
+
+        // Reset buffer
+        struct MessageBuffer *buffer = malloc(sizeof(struct MessageBuffer));
+        memset(buffer, 0, sizeof(struct MessageBuffer));
+
+        /**
+         * Actually receive the data from the server
+         */
+        ssize_t bytes_received = recv(client_socket, buffer, MAX_PACKET_SIZE, 0);
+        if (bytes_received == -1)
+        {
+            perror("Receive failed");
+            exit(EXIT_FAILURE);
+        }
+
+        /**
+         * We should have received 64 bytes exactly
+         */
+        printf("Received: %zd bytes\n", bytes_received);
+        assert(bytes_received == MAX_PACKET_SIZE);
+
+        // ─────────────────────────────────────────────────────────────
+        struct Result res;
+        memset(&res, 0, sizeof(res));
+        parse_message_to_command(buffer, &res);
+
+
+        printf("Result:\n");
+        printf("\tid: %u\n", res.cmd);
+        printf("\tPayload: %s\n", res.filename);
+        printf("\tPayload: %u\n", res.budget);
+
+
+        free(buffer);
+        return res;
+
+}
+
+void send_done_message(int client_socket)
+{
+       const static char message[] = "DONE";
+
+       if (send(client_socket, message, strlen(message), 0) == -1)
+       {
+           perror("Send failed");
+           exit(EXIT_FAILURE);
+       }
+
+       printf("Send DONE message");
+}
+
 int main()
 {
     /**
@@ -161,53 +218,35 @@ int main()
 
     printf("Connected to socket %s \n", server_address.sun_path);
 
-    /**
-     * Create a Message buffer from the incoming pacquet
-     */
-    struct MessageBuffer *buffer = malloc(sizeof(struct MessageBuffer));
+
 
     // ─────────────────────────────────────────────────────────────
 
-    /**
-     * Looping into te receiving
-     */
-    while (1)
-    {
-        // Reset buffer
-        memset(buffer, 0, sizeof(struct MessageBuffer));
 
+    struct Result res;
+    while(1)
+    {
         /**
-         * Actually receive the data from the server
+         * Looping into te receiving
          */
-        ssize_t bytes_received = recv(client_socket, buffer, MAX_PACKET_SIZE, 0);
-        if (bytes_received == -1)
+
+        while (1)
         {
-            perror("Receive failed");
-            exit(EXIT_FAILURE);
+            res = accept_new_message(client_socket);
+
+            printf("Testing message %i\n", res.cmd);
+            if (res.cmd == Start) {
+                break;
+            }
         }
 
-        /**
-         * We should have received 64 bytes exactly
-         */
-        printf("Received: %zd bytes\n", bytes_received);
-        assert(bytes_received == MAX_PACKET_SIZE);
-
-        // ─────────────────────────────────────────────────────────────
-        struct Result res;
-        memset(&res, 0, sizeof(res));
-        parse_message_to_command(buffer, &res);
-
-
-        printf("Result:\n", NULL);
-        printf("\tid: %u\n", res.cmd);
-        printf("\tPayload: %s\n", res.filename);
-        printf("\tPayload: %u\n", res.budget);
-
-        //?  Use res to your need
+        printf("Out of inner loop");
+        // Run
+//        if (res.cmd == Terminate) break;
+        send_done_message(client_socket);
     }
 
     //? Don't forget to free the buffer and close the socket
-    free(buffer);
     close(client_socket);
 
     return 0;
