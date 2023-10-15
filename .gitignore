@@ -2,8 +2,10 @@
 # Custom
 ##
 
+build/
 bin/
 *.log
+
 
 # Created by https://www.toptal.com/developers/gitignore/api/rust,rust-analyzer,c,c++,assembler,windows,linux,macos,jetbrains,visualstudiocode,vim,cmake
 # Edit at https://www.toptal.com/developers/gitignore?templates=rust,rust-analyzer,c,c++,assembler,windows,linux,macos,jetbrains,visualstudiocode,vim,cmake
@@ -305,7 +307,7 @@ tags
 
 ### VisualStudioCode ###
 .vscode/*
-!.vscode/settings.json
+.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
