@@ -15,6 +15,9 @@ use bincode::config::{
 use thread_id;
 use super::message::SyncMessageType;
 
+const QFLEX_MESSAGE_SIZE: usize         = 8;
+const MAX_FRAME_BYTE_SIZE: usize        = 256;
+const QFLEX_END_OF_BUDGET_MESSAGE: &str = "DONE";
 const MAX_FRAME_BYTE_SIZE: usize = 256;
 const SERIALIZE_CONFIG: Configuration<LittleEndian, Fixint> =  
     config::standard()
@@ -51,7 +54,7 @@ impl SocketHandler
         SocketHandler::send_message(&mut stream, SyncMessageType::Stop);
         SocketHandler::send_message(&mut stream, SyncMessageType::Fence(starting_budget));
 
-        let mut from_socket_buffer: [u8; 8] = [0; 8];
+        let mut from_socket_buffer: [u8; QFLEX_MESSAGE_SIZE] = [0; QFLEX_MESSAGE_SIZE];
         let mut str_from_buffer: &str;
 
         loop {
@@ -62,7 +65,7 @@ impl SocketHandler
             th_println!("Sending START");
             SocketHandler::send_message(&mut stream, SyncMessageType::Start);
 
-            th_println!("Starting to wait for DONE");
+            th_println!("Starting to wait for {QFLEX_END_OF_BUDGET_MESSAGE}");
             loop {
                 // Empty buffer first
                 from_socket_buffer.fill(0);
@@ -75,9 +78,9 @@ impl SocketHandler
                 
                 str_from_buffer = std::str::from_utf8(&from_socket_buffer).unwrap();
                 
-                if str_from_buffer.contains("DONE")
+                if str_from_buffer.contains(QFLEX_END_OF_BUDGET_MESSAGE)
                 {
-                    th_println!("Got DONE, goes to wait");
+                    th_println!("Got {QFLEX_END_OF_BUDGET_MESSAGE}, goes to wait");
                     break;
                 }
 

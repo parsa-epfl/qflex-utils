@@ -8,6 +8,7 @@ use std::sync::{Arc, Barrier};
 
 mod message;
 mod socket_handler;
+use message::SyncMessageType;
 use socket_handler::SocketHandler;
 
 
