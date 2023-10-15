@@ -230,7 +230,7 @@ int main()
          * Looping into te receiving
          */
 
-        while (1)
+        while(1)
         {
             res = accept_new_message(client_socket);
 
@@ -240,13 +240,11 @@ int main()
             }
         }
 
-        printf("Out of inner loop\n");
         // Run
-        // if (res.cmd == Terminate) break;
         send_done_message(client_socket);
     }
 
-    //? Don't forget to free the buffer and close the socket
+    // ? Don't forget to close the socket
     close(client_socket);
 
     return 0;

@@ -30,7 +30,7 @@ impl<'a> Shell<'a> {
             let unprocessed_line =
                 match self.input_reader.read(self.prompt.as_str()) {
                     InputResult::CMD(line) => line,
-                    // _other => continue '_shell,
+                    _other => continue '_shell,
                 };
 
             // TODO: Escape char, stuff, and other sequences
