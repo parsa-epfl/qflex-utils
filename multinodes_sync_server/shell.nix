@@ -6,7 +6,9 @@ in
       pkgs.rustc
       pkgs.rustfmt
       pkgs.rustup
-      pkgs.cargo
+      pkgs.cargo,
+      pkgs.cmake,
+      pkgs.lldb
     ];
 
     env = {

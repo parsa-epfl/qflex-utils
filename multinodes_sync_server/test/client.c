@@ -145,7 +145,7 @@ struct Result accept_new_message(int client_socket)
         ssize_t bytes_received = recv(client_socket, buffer, MAX_PACKET_SIZE, 0);
         if (bytes_received == -1)
         {
-            perror("Receive failed");
+            perror("Could not receive from socket");
             exit(EXIT_FAILURE);
         }
 
@@ -161,10 +161,10 @@ struct Result accept_new_message(int client_socket)
         parse_message_to_command(buffer, &res);
 
 
-        printf("Result:\n");
-        printf("\tid: %u\n", res.cmd);
-        printf("\tPayload: %s\n", res.filename);
-        printf("\tPayload: %u\n", res.budget);
+        printf("\tMessage:\n");
+        printf("\t\tid: %u\n", res.cmd);
+        printf("\t\tPayload: %s\n", res.filename);
+        printf("\t\tPayload: %u\n\n", res.budget);
 
 
         free(buffer);
@@ -234,15 +234,15 @@ int main()
         {
             res = accept_new_message(client_socket);
 
-            printf("Testing message %i\n", res.cmd);
             if (res.cmd == Start) {
+                printf("Got message %2x => Breaking from loop\n", res.cmd);
                 break;
             }
         }
 
-        printf("Out of inner loop");
+        printf("Out of inner loop\n");
         // Run
-//        if (res.cmd == Terminate) break;
+        // if (res.cmd == Terminate) break;
         send_done_message(client_socket);
     }
 
