@@ -1,7 +1,17 @@
+cargo-features = ["profile-rustflags"]
+
 [package]
 name = "multinodes_sync_server"
 version = "0.1.0"
 edition = "2021"
+
+[profile.release]
+codegen-units = 1
+lto = false
+opt-level = "z"
+strip = "debuginfo"
+rustflags = ["-C", "target-cpu=native"]
+
 
 [dependencies]
 bincode = { version = "2.0.0-rc.3", features = [] }
