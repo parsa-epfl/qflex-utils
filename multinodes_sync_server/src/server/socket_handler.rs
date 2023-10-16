@@ -1,7 +1,7 @@
 use std::{
     os::unix::net::UnixStream, 
-    sync::{Arc, Barrier}, 
-    io::{Read, Write}
+    sync::{Arc, Barrier, Mutex}, 
+    io::{Read, Write},
 };
 
 use bincode::config::{
@@ -13,12 +13,12 @@ use bincode::config::{
 
 
 use thread_id;
-use super::message::SyncMessageType;
+use super::{message::SyncMessageType, circular_buffer::CircularBuffer};
 
 const QFLEX_MESSAGE_SIZE: usize         = 8;
 const MAX_FRAME_BYTE_SIZE: usize        = 256;
 const QFLEX_END_OF_BUDGET_MESSAGE: &str = "DONE";
-const MAX_FRAME_BYTE_SIZE: usize = 256;
+
 const SERIALIZE_CONFIG: Configuration<LittleEndian, Fixint> =  
     config::standard()
         .with_little_endian()
@@ -35,10 +35,7 @@ macro_rules! th_println {
 }
 
 
-pub struct SocketHandler
-{
-
-}
+pub struct SocketHandler{}
 
 impl SocketHandler
 {
@@ -48,11 +45,25 @@ impl SocketHandler
     pub fn handle(
         mut stream: UnixStream,
         ready_lock: Arc<Barrier>,
-        starting_budget: u32)
+        _starting_budget: u32,
+        buffer: Arc<Mutex<CircularBuffer<u8>>>)
     {
+
+        let mut read_ptr: usize = 0;
+        
+        loop {
+            let mut lock = buffer.lock().unwrap();
+
+            let info: Option<&u8> = lock.read(&mut read_ptr);
+            
+            match info {
+                None => {println!("Nothing to read... breaking"); break;},
+                Some(value) => println!("Got value {}", *value),
+            }
+        }
         // Send Stop anyway, then set budget
-        SocketHandler::send_message(&mut stream, SyncMessageType::Stop);
-        SocketHandler::send_message(&mut stream, SyncMessageType::Fence(starting_budget));
+        // SocketHandler::send_message(&mut stream, SyncMessageType::Stop);
+        // SocketHandler::send_message(&mut stream, SyncMessageType::Fence(starting_budget));
 
         let mut from_socket_buffer: [u8; QFLEX_MESSAGE_SIZE] = [0; QFLEX_MESSAGE_SIZE];
         let mut str_from_buffer: &str;
@@ -72,7 +83,10 @@ impl SocketHandler
 
                 match stream.read(&mut from_socket_buffer)
                 {
-                    Ok(_) =>  th_println!("Received: {:?}", from_socket_buffer),
+                    Ok(_) =>  {
+                        if *from_socket_buffer.first().unwrap() == 0 {continue;}
+                        th_println!("Received: {:?}", from_socket_buffer);
+                    },
                     Err(e) => panic!("Could not read from stream => {}", e.kind()), 
                 }
                 
@@ -83,7 +97,6 @@ impl SocketHandler
                     th_println!("Got {QFLEX_END_OF_BUDGET_MESSAGE}, goes to wait");
                     break;
                 }
-
             }
         }
     }

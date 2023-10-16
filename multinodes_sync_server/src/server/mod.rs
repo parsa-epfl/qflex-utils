@@ -4,12 +4,14 @@ use std::os::unix::net::UnixListener;
 use std::thread::{self, JoinHandle};
 
 
-use std::sync::{Arc, Barrier};
+use std::sync::{Arc, Barrier, Mutex};
 
 mod message;
 mod socket_handler;
-use message::SyncMessageType;
 use socket_handler::SocketHandler;
+
+mod circular_buffer;
+use circular_buffer::CircularBuffer;
 
 
 
@@ -20,9 +22,7 @@ pub struct SyncServer {
     budget: u32,
     nb_of_slave: usize,
     socket_path: PathBuf,
-
-    // socket_ready_lock: Arc<(Mutex<u8>, Condvar)>,
-    // socket_barrier: Arc<Barrier>,
+    ring_buffer: Arc<Mutex<CircularBuffer<u8>>>,
 
 }
 
@@ -36,6 +36,7 @@ impl SyncServer {
             // socket_ready_lock: Arc::new((Mutex::new(0), Condvar::new())),
             // socket_barrier: Arc::new(Barrier::new(nb_of_slave)),
             socket_path: PathBuf::from(socket_path),
+            ring_buffer: Arc::new(Mutex::new(CircularBuffer::new(256))),
         }
     }
 
@@ -62,11 +63,15 @@ impl SyncServer {
 
         let  socket_barrier = Arc::new(Barrier::new(self.nb_of_slave));
 
+        self.ring_buffer.lock().unwrap().push(1);
+        self.ring_buffer.lock().unwrap().push(5);
+
         for stream in listener.incoming() {
 
             let local_thread_ready_lock = Arc::clone(&socket_barrier);
+            let local_thread_buffer = Arc::clone(&mut self.ring_buffer);
             let budget = self.budget;
-
+            
             match stream
             {
                 Ok(stream) => thread_handles.push(
@@ -74,7 +79,8 @@ impl SyncServer {
                         move || { SocketHandler::handle(
                             stream,
                             local_thread_ready_lock,
-                            budget); }
+                            budget,
+                            local_thread_buffer); }
                     )
                 ),
                 Err(err) => eprintln!("Ouch, problem in incoming request, ({})", err),
