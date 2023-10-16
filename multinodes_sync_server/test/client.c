@@ -5,16 +5,19 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <assert.h>
+#include <time.h>
 
 // Define the UNIX socket, the dummy client will try to connect to
 #define SOCKET_PATH "/var/run/ss"
-#ifdef DNDEBUG
+#ifndef DNDEBUG
     // Unset printf if DEBUG is not defined
     #define printf(x...)
 #endif
 
 // Fixed byte size packet for incoming message
 const size_t MAX_PACKET_SIZE = 256;
+
+const size_t RTT_NB_ITERATION = 1e6;
 
 /**
  * Command type and their decimal representation.
@@ -220,10 +223,21 @@ int main()
 
 
 
-    // ─────────────────────────────────────────────────────────────
 
 
+
+    
+
+    // ─────────────────────────────────────────────────────────────────────
+    
     struct Result res;
+
+    // ─────────────────────────────────────────────────────────────────────
+    clock_t start, end;
+    double delta_time;
+    start = clock();
+    size_t counter = 0;
+    // ─────────────────────────────────────────────────────────────
     while(1)
     {
         /**
@@ -242,7 +256,18 @@ int main()
 
         // Run
         send_done_message(client_socket);
+        
+        
+        if (++counter >= RTT_NB_ITERATION) break;
+
     }
+
+    end = clock();
+
+    delta_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+    double average_rtt_time = delta_time/RTT_NB_ITERATION;
+
+    fprintf(stdout, "Average RTT => :%zu:%f:%f\n", RTT_NB_ITERATION, delta_time, average_rtt_time);
 
     // ? Don't forget to close the socket
     close(client_socket);

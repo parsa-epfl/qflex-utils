@@ -18,7 +18,7 @@ use super::message::SyncMessageType;
 const QFLEX_MESSAGE_SIZE: usize         = 8;
 const MAX_FRAME_BYTE_SIZE: usize        = 256;
 const QFLEX_END_OF_BUDGET_MESSAGE: &str = "DONE";
-const MAX_FRAME_BYTE_SIZE: usize = 256;
+
 const SERIALIZE_CONFIG: Configuration<LittleEndian, Fixint> =  
     config::standard()
         .with_little_endian()
@@ -29,7 +29,7 @@ const SERIALIZE_CONFIG: Configuration<LittleEndian, Fixint> =
 macro_rules! th_println {
     ( $($arg:tt)* ) => {
         {   
-            println!("[0x{:x}] {}", thread_id::get(), format_args!($($arg)*))
+            //println!("[0x{:x}] {}", thread_id::get(), format_args!($($arg)*))
         }
     };
 }
