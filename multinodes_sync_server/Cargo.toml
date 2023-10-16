@@ -1,4 +1,4 @@
-cargo-features = ["profile-rustflags"]
+# cargo-features = ["profile-rustflags"]
 
 [package]
 name = "multinodes_sync_server"
@@ -10,7 +10,7 @@ codegen-units = 1
 lto = false
 opt-level = "z"
 strip = "debuginfo"
-rustflags = ["-C", "target-cpu=native"]
+# rustflags = ["-C", "target-cpu=native"]
 
 
 [dependencies]
