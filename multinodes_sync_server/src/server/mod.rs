@@ -1,17 +1,24 @@
+
+use std::f32::consts::E;
 use std::fs;
 use std::path::PathBuf;
 use std::os::unix::net::UnixListener;
+use std::sync::mpsc::Receiver;
 use std::thread::{self, JoinHandle};
-
+use std::time;
 
 use std::sync::{Arc, Barrier, Mutex};
 
-mod message;
 mod socket_handler;
 use socket_handler::SocketHandler;
 
 mod circular_buffer;
 use circular_buffer::CircularBuffer;
+
+pub mod message;
+use message::SyncMessageType;
+
+use crate::th_println;
 
 
 
@@ -20,29 +27,30 @@ use circular_buffer::CircularBuffer;
 
 pub struct SyncServer {
     budget: u32,
-    nb_of_slave: usize,
+    nb_of_slave: u16,
     socket_path: PathBuf,
-    ring_buffer: Arc<Mutex<CircularBuffer<u8>>>,
+    ring_buffer: Arc<Mutex<CircularBuffer<SyncMessageType>>>,
+    // channel_from_shell: Receiver<SyncMessageType>,
 
 }
 
 impl SyncServer {
 
-    pub fn new(socket_path: String, budget: u32, nb_of_slave: usize) -> Self
+    pub fn new(socket_path: String, budget: u32, nb_of_slave: u16, /*rx: Receiver<SyncMessageType>*/) -> Self
     {
         Self {
             budget,
             nb_of_slave,
-            // socket_ready_lock: Arc::new((Mutex::new(0), Condvar::new())),
-            // socket_barrier: Arc::new(Barrier::new(nb_of_slave)),
+
             socket_path: PathBuf::from(socket_path),
-            ring_buffer: Arc::new(Mutex::new(CircularBuffer::new(256))),
+            ring_buffer: Arc::new(Mutex::new(CircularBuffer::new(256, nb_of_slave))),
+            // channel_from_shell: rx
         }
     }
 
 
 
-    pub fn listen(&mut self) -> std::io::Result<()>
+    pub fn listen(&mut self, rx: Receiver<SyncMessageType>) -> std::io::Result<()>
     {
 
         // Delete socket file if already exist
@@ -59,12 +67,17 @@ impl SyncServer {
         println!("Server started, waiting for clients on {}", self.socket_path.display());
 
 
-        let mut thread_handles: Vec<JoinHandle<_>> = Vec::with_capacity(self.nb_of_slave);
+        let mut thread_handles: Vec<JoinHandle<_>> = Vec::with_capacity(self.nb_of_slave.into());
 
-        let  socket_barrier = Arc::new(Barrier::new(self.nb_of_slave));
+        let  socket_barrier = Arc::new(Barrier::new(self.nb_of_slave.into()));
+        
 
-        self.ring_buffer.lock().unwrap().push(1);
-        self.ring_buffer.lock().unwrap().push(5);
+        let channel_ring =  Arc::clone(&mut self.ring_buffer);
+
+        let _rx = thread::spawn(move || {
+            SyncServer::listen_2_shell(rx, channel_ring);
+        });
+
 
         for stream in listener.incoming() {
 
@@ -83,7 +96,7 @@ impl SyncServer {
                             local_thread_buffer); }
                     )
                 ),
-                Err(err) => eprintln!("Ouch, problem in incoming request, ({})", err),
+                Err(err) => eprintln!("Ouch, problem in incoming request, ({err})"),
             }
         }
 
@@ -92,6 +105,51 @@ impl SyncServer {
         }
 
         Ok(())
+    }
+
+    fn listen_2_shell(rx: Receiver<SyncMessageType>, ring: Arc<Mutex<CircularBuffer<SyncMessageType>>>)
+    {
+        loop 
+        {
+
+            // let mut mess_type = Ok(());
+            
+            // while let Err(e) = mess_type {
+            //     mess_type = rx.recv();
+            //     thread::sleep(time::Duration::from_micros(10));
+            // }
+            
+
+            // while let Res(e) = rx.recv() {
+            //     thread::sleep(time::Duration::from_micros(10));
+            // }
+
+            let mess_type;
+
+            loop {
+                match rx.recv() {
+                    Ok(incoming) => {
+                        mess_type = incoming;
+                        break;
+                    }, 
+                    Err(e) => {
+                        th_println!("Did not receive anything => {e}");
+                        thread::sleep(time::Duration::from_micros(10));
+                    }
+                }
+            }
+
+            {
+                let mut lock = ring.lock().unwrap();
+
+                
+                while let Err(e) = lock.push(mess_type.clone())
+                {
+                    th_println!("{e}");
+                    thread::sleep(time::Duration::from_secs(1));
+                }
+            }
+        }
     }
 
 }

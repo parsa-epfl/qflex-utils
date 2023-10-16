@@ -1,93 +1,66 @@
-
-
-
-// trait CircularBufferInterface<T> 
-// {
-//     fn new(capacity: usize) -> Self;
-//     fn read(&mut self, read_ptr: &mut usize) -> Option<&T>;
-// }
-
-// trait CircularBufferWriterInterface<C>: CircularBufferInterface<T>
-// {
-//     fn new(buffer: C) -> Self;
-//     fn write(&mut self, write_ptr: &mut usize, value: T);
-// }
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-// struct CircularBufferWriter<C>
-// {
-//     buffer: C,
-// }
-
-// impl<C, T> CircularBufferWriterInterface<T> for CircularBufferWriter<C>
-// {
-
-//     fn new(buffer: C) -> Self {
-//         CircularBufferWriter { buffer }
-//     }
-
-//     fn write(&mut self, write_ptr: &mut usize, value: T)
-//     {
-//         self.storage[write_ptr % self.capacity] = value;
-//         *write_ptr += 1;
-//         *write_ptr %= self.capacity;
-//     }   
-
-// }
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub struct CircularBuffer<T> {
     capacity    : usize,
     write_ptr   : usize,
     storage     : Vec<T>,
+    access_counter : Vec<u16>,
+    nb_accessor: u16,
 }
 
-impl<T> /*CircularBufferInterface<T> for*/ CircularBuffer<T>
+impl<T> CircularBuffer<T>
 {
 
-    pub fn new(capacity: usize) -> Self
+    pub fn new(capacity: usize, nb_accessor: u16) -> Self
     {
         Self {
             capacity,
             write_ptr: 0,
             storage: Vec::<T>::with_capacity(capacity),
+            access_counter : vec![0; capacity],
+            nb_accessor,
         }
     }
-
-    pub fn read(&mut self, read_ptr: &mut usize) -> Option<&T>
+    
+    pub fn read(&mut self, read_ptr: &mut usize) -> Result<&T, &'static str>
     {
-        if *read_ptr == self.write_ptr { return None; }
+        if self.write_ptr == *read_ptr { return Err("Nothing to read");}
 
-        let old_ptr = read_ptr.clone();
+        // Increment the number of access to this cell (unsafe)
+        self.access_counter[*read_ptr] += 1;
+
+        // Clone the pointer, to use it in an owning function
+        let present_ptr = read_ptr.to_owned();
+        
+        // Update read_ptr position
         *read_ptr += 1;
         *read_ptr %= self.capacity;
-        println!("old={}, actual={}", old_ptr, *read_ptr);
-        self.storage.get(old_ptr % self.capacity)
+
+        // return value        
+        self.storage.get(present_ptr).ok_or("Out of bound")
     }
 
-    pub fn push(&mut self, value: T)
+ 
+    pub fn push(&mut self, value: T) -> Result<usize, &'static str>
     {
+        
+        let nb_access = match self.access_counter.get(self.write_ptr) {
+            Some(v) => v,
+            None => return Err("Out of bound")
+            
+        };
+
+        // If the number of time the cell was accessed is lower than the number of thread splawn (=guest)
+        // that means the RingBuffer is full and should wait for the socket to keep up
+        if !(*nb_access >= self.nb_accessor) { return Err("Ring buffer is full"); }
+
+
         self.storage.insert(self.write_ptr, value);
+        self.access_counter.insert(self.write_ptr, 0);
         self.write_ptr += 1;
         self.write_ptr %= self.capacity;
+
+        Ok(self.write_ptr)
     }  
 
 }
-
-
-// fn main()
-// {
-//     let mut circ_buffer: CircularBuffer<u8> = CircularBuffer::new(16);
-//     let mut my_pos : usize = 0;
-//     circ_buffer.push(2);
-//     circ_buffer.push(6);
-//     circ_buffer.push(200);
-
-//     println!("{}", circ_buffer.read(&mut my_pos).unwrap());
-
-
-//     println!("{}", circ_buffer.read(&mut my_pos).unwrap());
-
-// }

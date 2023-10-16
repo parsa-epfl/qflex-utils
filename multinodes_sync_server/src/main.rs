@@ -2,9 +2,14 @@
 
 
 use std::thread;
+use std::sync::mpsc::{self, Sender, Receiver};
 
 mod shell;
 mod server;
+
+
+use server::message::SyncMessageType;
+
 
 use shell::Shell;
 use shell::command::Command;
@@ -12,27 +17,34 @@ use server::SyncServer;
 
 
 fn main() {
+    // create communication channel
+    let (tx, rx): (Sender<SyncMessageType>, Receiver<SyncMessageType>) = mpsc::channel();
 
-    let mut shell = Shell::new("(SS) > ".to_string());
+    let mut shell = Shell::new("(SS) > ".to_string(), tx);
 
     shell.cmds.insert(
-        "test", Command::new("Test smth".to_string(), test)
+        "stop", Command::new("Stop !!!".to_string(), stop)
     );
 
 
-    let _ = SyncServer::new("/var/run/ss".to_string(), 10000, 2).listen();
-    // match server.run() {
-    //     Ok(_) => (),
-    //     Err(e) => eprintln!("Server error: {}", e),
-    // }
+    let mut server = SyncServer::new(
+        "/var/run/ss".to_string(), 
+        10000, 
+        2,
+    );
+
+    let handle = thread::spawn(move || {
+        server.listen(rx).unwrap();
+    });
 
     // shell.run();
+
+    handle.join().expect("Fail to join SS thread");
 }
 
 
 
-fn test()
+fn stop(tx: &Sender<SyncMessageType>)
 {
-    println!("Greetings my good friend.");
-
+    tx.send(SyncMessageType::Stop).unwrap();
 }

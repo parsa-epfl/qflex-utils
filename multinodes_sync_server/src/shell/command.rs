@@ -3,7 +3,11 @@
 // Shell function signature, [STATE, ARGUMENTS]
 // pub type CommandFn<T> = fn(&mut T, Vec<String>) -> Result<(), Box<dyn Error>>>;
 
-pub type CommandFn = fn();
+use std::sync::mpsc::Sender;
+
+use crate::server::message::SyncMessageType;
+
+pub type CommandFn = fn(&Sender<SyncMessageType>);
 
 pub struct Command {
     pub command: CommandFn,

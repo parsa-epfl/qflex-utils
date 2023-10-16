@@ -35,40 +35,31 @@ macro_rules! th_println {
 }
 
 
+
 pub struct SocketHandler{}
 
 impl SocketHandler
 {
 
-
-
     pub fn handle(
         mut stream: UnixStream,
         ready_lock: Arc<Barrier>,
-        _starting_budget: u32,
-        buffer: Arc<Mutex<CircularBuffer<u8>>>)
+        starting_budget: u32,
+        buffer: Arc<Mutex<CircularBuffer<SyncMessageType>>>)
     {
-
-        let mut read_ptr: usize = 0;
-        
-        loop {
-            let mut lock = buffer.lock().unwrap();
-
-            let info: Option<&u8> = lock.read(&mut read_ptr);
-            
-            match info {
-                None => {println!("Nothing to read... breaking"); break;},
-                Some(value) => println!("Got value {}", *value),
-            }
-        }
         // Send Stop anyway, then set budget
-        // SocketHandler::send_message(&mut stream, SyncMessageType::Stop);
-        // SocketHandler::send_message(&mut stream, SyncMessageType::Fence(starting_budget));
+        SocketHandler::send_message(&mut stream, SyncMessageType::Stop);
+        SocketHandler::send_message(&mut stream, SyncMessageType::Fence(starting_budget));
 
         let mut from_socket_buffer: [u8; QFLEX_MESSAGE_SIZE] = [0; QFLEX_MESSAGE_SIZE];
         let mut str_from_buffer: &str;
 
+        let mut read_ptr: usize = 0;
+
         loop {
+            th_println!("Consuming buffer");
+            SocketHandler::consuming_buffer(&buffer, &mut read_ptr, &mut stream);
+
 
             th_println!("Starting to wait");
             ready_lock.wait();
@@ -81,7 +72,7 @@ impl SocketHandler
                 // Empty buffer first
                 from_socket_buffer.fill(0);
 
-                match stream.read(&mut from_socket_buffer)
+                match stream.read(&mut from_socket_buffer[..])
                 {
                     Ok(_) =>  {
                         if *from_socket_buffer.first().unwrap() == 0 {continue;}
@@ -101,7 +92,9 @@ impl SocketHandler
         }
     }
 
-    fn send_message(stream: &mut UnixStream, message: SyncMessageType)
+    fn send_message(
+        stream: &mut UnixStream, 
+        message: SyncMessageType)
     {
 
         //? @see https://github.com/bincode-org/bincode/blob/trunk/docs/spec.md
@@ -114,6 +107,23 @@ impl SocketHandler
 
     }
 
+    fn consuming_buffer(
+        buffer: &Arc<Mutex<CircularBuffer<SyncMessageType>>>, 
+        read_ptr :&mut usize, 
+        stream: &mut UnixStream)
+    {
+        loop {
+            let mut lock = buffer.lock().unwrap();
 
+            let message_type = lock.read(read_ptr);
 
-}
+            match message_type {
+                Err(e) => {println!("{}", e); break;},
+                Ok(value) => {
+                    println!("Got value {:?}", *value);
+                    SocketHandler::send_message(stream, value.clone());
+                },
+            }
+        }
+    }
+}  
