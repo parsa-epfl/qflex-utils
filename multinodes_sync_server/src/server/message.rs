@@ -1,6 +1,6 @@
 use bincode::Encode;
 
-#[derive(Encode, Debug, Clone)]
+#[derive(Encode, Debug, Clone, PartialEq)]
 pub enum SyncMessageType {
     Null,
     Stop,

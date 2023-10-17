@@ -12,7 +12,6 @@ use bincode::config::{
 };
 
 
-use thread_id;
 use super::{message::SyncMessageType, circular_buffer::CircularBuffer};
 
 const QFLEX_MESSAGE_SIZE: usize         = 8;
@@ -24,15 +23,6 @@ const SERIALIZE_CONFIG: Configuration<LittleEndian, Fixint> =
         .with_little_endian()
         .with_fixed_int_encoding();
 
-
-#[macro_export]
-macro_rules! th_println {
-    ( $($arg:tt)* ) => {
-        {   
-            println!("[0x{:x}] {}", thread_id::get(), format_args!($($arg)*))
-        }
-    };
-}
 
 
 
@@ -57,17 +47,17 @@ impl SocketHandler
         let mut read_ptr: usize = 0;
 
         loop {
-            th_println!("Consuming buffer");
+            debug!("Consuming buffer");
             SocketHandler::consuming_buffer(&buffer, &mut read_ptr, &mut stream);
 
 
-            th_println!("Starting to wait");
+            debug!("Starting to wait");
             ready_lock.wait();
             
-            th_println!("Sending START");
+            debug!("Sending START");
             SocketHandler::send_message(&mut stream, SyncMessageType::Start);
 
-            th_println!("Starting to wait for {QFLEX_END_OF_BUDGET_MESSAGE}");
+            debug!("Starting to wait for {QFLEX_END_OF_BUDGET_MESSAGE}");
             loop {
                 // Empty buffer first
                 from_socket_buffer.fill(0);
@@ -76,16 +66,16 @@ impl SocketHandler
                 {
                     Ok(_) =>  {
                         if *from_socket_buffer.first().unwrap() == 0 {continue;}
-                        th_println!("Received: {:?}", from_socket_buffer);
+                        debug!("Received: {:?}", from_socket_buffer);
                     },
-                    Err(e) => panic!("Could not read from stream => {}", e.kind()), 
+                    Err(e) => error!("Could not read from stream => {}", e.kind()), 
                 }
                 
                 str_from_buffer = std::str::from_utf8(&from_socket_buffer).unwrap();
                 
                 if str_from_buffer.contains(QFLEX_END_OF_BUDGET_MESSAGE)
                 {
-                    th_println!("Got {QFLEX_END_OF_BUDGET_MESSAGE}, goes to wait");
+                    debug!("Got {QFLEX_END_OF_BUDGET_MESSAGE}, goes to wait");
                     break;
                 }
             }
@@ -101,8 +91,8 @@ impl SocketHandler
         let mut encoded_msg: [u8; MAX_FRAME_BYTE_SIZE] = [0; MAX_FRAME_BYTE_SIZE];
         bincode::encode_into_slice(&message, &mut encoded_msg, SERIALIZE_CONFIG).unwrap();
         match stream.write(&encoded_msg) {
-            Ok(_) => th_println!("Send message {:?}", message),
-            Err(e) => th_println!("Something went somewhat wrong => '{}'", e.kind()),
+            Ok(_) => info!("Send message {:?}", message),
+            Err(e) => error!("Something went somewhat wrong => '{}'", e.kind()),
         };
 
     }
@@ -112,16 +102,31 @@ impl SocketHandler
         read_ptr :&mut usize, 
         stream: &mut UnixStream)
     {
+        let mut is_stopped: bool = false;
+
         loop {
             let mut lock = buffer.lock().unwrap();
 
             let message_type = lock.read(read_ptr);
 
             match message_type {
-                Err(e) => {println!("{}", e); break;},
+                Err(e) => {
+
+                    debug!("{}", e); 
+                    
+                    if !is_stopped {break};
+
+                },
                 Ok(value) => {
-                    println!("Got value {:?}", *value);
+
+                    info!("Got value {:?}", *value);
+
+                    is_stopped = if *value == SyncMessageType::Stop {true} else {is_stopped};
+                    is_stopped = if *value == SyncMessageType::Start {false} else {is_stopped};
+
+
                     SocketHandler::send_message(stream, value.clone());
+                
                 },
             }
         }

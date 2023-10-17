@@ -24,10 +24,11 @@ impl<T> CircularBuffer<T>
     
     pub fn read(&mut self, read_ptr: &mut usize) -> Result<&T, &'static str>
     {
-        if self.write_ptr == *read_ptr { return Err("Nothing to read");}
+        if self.write_ptr == *read_ptr { return Err("Nothing to read"); }
+        if 0 >= self.access_counter[*read_ptr] { return Err("Already Read"); }
 
-        // Increment the number of access to this cell (unsafe)
-        self.access_counter[*read_ptr] += 1;
+        // Decrement the number of access to this cell (unsafe)
+        self.access_counter[*read_ptr] -= 1;
 
         // Clone the pointer, to use it in an owning function
         let present_ptr = read_ptr.to_owned();
@@ -43,20 +44,19 @@ impl<T> CircularBuffer<T>
  
     pub fn push(&mut self, value: T) -> Result<usize, &'static str>
     {
-        
+
         let nb_access = match self.access_counter.get(self.write_ptr) {
             Some(v) => v,
-            None => return Err("Out of bound")
+            None => return Err("Out of bound§")
             
         };
 
         // If the number of time the cell was accessed is lower than the number of thread splawn (=guest)
         // that means the RingBuffer is full and should wait for the socket to keep up
-        if !(*nb_access >= self.nb_accessor) { return Err("Ring buffer is full"); }
-
+        if *nb_access > 0 { return Err("Ring buffer is full"); }
 
         self.storage.insert(self.write_ptr, value);
-        self.access_counter.insert(self.write_ptr, 0);
+        self.access_counter.insert(self.write_ptr, self.nb_accessor);
         self.write_ptr += 1;
         self.write_ptr %= self.capacity;
 

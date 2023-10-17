@@ -1,5 +1,5 @@
 
-use std::{collections::HashMap, sync::mpsc::Sender};
+use std::{collections::HashMap, sync::mpsc::SyncSender};
 
 pub mod command;
 mod input_reader;
@@ -15,11 +15,11 @@ pub struct Shell<'a> {
     pub prompt: String,
     pub cmds: HashMap<&'a str, Command>,
     pub input_reader: InputReader,
-    channel_2_server: Sender<SyncMessageType>
+    channel_2_server: SyncSender<SyncMessageType>
 }
 
 impl<'a> Shell<'a> {
-    pub fn new(prompt: String, channel_2_server: Sender<SyncMessageType>) -> Self {
+    pub fn new(prompt: String, channel_2_server: SyncSender<SyncMessageType>) -> Self {
         Self {
             prompt,
             cmds: HashMap::new(),
@@ -43,7 +43,7 @@ impl<'a> Shell<'a> {
 
             match command {
                 Some(c) => { (c.command)(&self.channel_2_server) }
-                None => { panic!("Something unusual appened: cmd={}", unprocessed_line.trim()) }
+                None => { error!("Something unusual appened: cmd={}", unprocessed_line.trim()) }
             }
         }
     }
