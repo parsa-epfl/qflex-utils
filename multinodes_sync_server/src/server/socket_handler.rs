@@ -12,7 +12,7 @@ use bincode::config::{
 };
 
 
-use thread_id;
+use thread_id::{self, get};
 use super::message::SyncMessageType;
 
 const QFLEX_MESSAGE_SIZE: usize         = 8;
@@ -57,13 +57,24 @@ impl SocketHandler
         let mut from_socket_buffer: [u8; QFLEX_MESSAGE_SIZE] = [0; QFLEX_MESSAGE_SIZE];
         let mut str_from_buffer: &str;
 
+        let mut quantum_cnt = 1;
         loop {
 
             th_println!("Starting to wait");
             ready_lock.wait();
+
+            println!("Finished a quantums, curr quantum_cnt = {}", quantum_cnt);
+            if quantum_cnt % 50000 == 0 {
+                // Send snapshot request and name 
+                let snap_name = format!("snap_t{}_q{}", thread_id::get(), quantum_cnt);
+                println!("Finished 1000 quantums, new snap:{}", snap_name);
+                // SocketHandler::send_message(&mut stream, SyncMessageType::Snap(snap_name));
+            }
             
             th_println!("Sending START");
             SocketHandler::send_message(&mut stream, SyncMessageType::Start);
+            quantum_cnt += 1;
+
 
             th_println!("Starting to wait for {QFLEX_END_OF_BUDGET_MESSAGE}");
             loop {
