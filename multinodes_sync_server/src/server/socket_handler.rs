@@ -105,17 +105,17 @@ impl SocketHandler
         let mut is_stopped: bool = false;
 
         loop {
+        
             let mut lock = buffer.lock().unwrap();
-
             let message_type = lock.read(read_ptr);
+            
 
+    
             match message_type {
                 Err(e) => {
 
                     debug!("{}", e); 
-                    
                     if !is_stopped {break};
-
                 },
                 Ok(value) => {
 
@@ -129,6 +129,8 @@ impl SocketHandler
                 
                 },
             }
+            drop(lock);
+            
         }
     }
 }  

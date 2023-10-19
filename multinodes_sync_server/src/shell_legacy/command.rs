@@ -7,7 +7,7 @@ use std::sync::mpsc::SyncSender;
 
 use crate::server::message::SyncMessageType;
 
-pub type CommandFn = fn(&SyncSender<SyncMessageType>);
+pub type CommandFn = fn(&SyncSender<SyncMessageType>, Vec<String>);
 
 pub struct Command {
     pub command: CommandFn,

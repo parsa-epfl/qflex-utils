@@ -208,7 +208,7 @@ int main()
     strcpy(server_address.sun_path, SOCKET_PATH);
 
     /**
-     * Connect to server through UNIx socket
+     * Connect to server through UNIX socket
      */
     if (connect(client_socket, (struct sockaddr *)&server_address, sizeof(struct sockaddr_un)) == -1)
     {

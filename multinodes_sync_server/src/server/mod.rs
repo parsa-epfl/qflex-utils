@@ -41,7 +41,7 @@ impl SyncServer {
 
 
 
-    pub fn listen(&mut self, rx: Receiver<SyncMessageType>) -> std::io::Result<()>
+    pub fn listen(&mut self, rx: Option<Receiver<SyncMessageType>>) -> std::io::Result<()>
     {
         // Delete socket file if already exist
         if self.socket_path.exists() {
@@ -56,13 +56,15 @@ impl SyncServer {
         info!("Server started, waiting for clients on {}", self.socket_path.display());
 
         let mut thread_handles: Vec<JoinHandle<_>> = Vec::with_capacity(self.nb_of_slave.into());
-        let  socket_barrier = Arc::new(Barrier::new(self.nb_of_slave.into()));
-        let channel_ring =  Arc::clone(&mut self.ring_buffer);
-
-        let _rx = thread::spawn(move || {
-            SyncServer::listen_2_shell(rx, channel_ring);
-        });
-
+        let socket_barrier = Arc::new(Barrier::new(self.nb_of_slave.into()));
+        
+        if rx.is_some()
+        {
+            let channel_ring = Arc::clone(&mut self.ring_buffer);
+            let _rx: JoinHandle<()> = thread::spawn(move || {
+                SyncServer::listen_2_shell(rx.expect("Expected a channel but got nothing"), channel_ring);
+            });
+        }
 
         for stream in listener.incoming() {
 
@@ -97,18 +99,22 @@ impl SyncServer {
 
         info!("Starting channel listener threads");
 
-        let mess_type = rx.recv().expect("MPSC Communication channel broke");
-
-        info!("Incomming message from SHELL => {:?}", mess_type);
-
-        {
-            let mut lock = ring.lock().unwrap();
-            while let Err(e) = lock.push(mess_type.clone()) 
+        loop {     
+            let mess_type = rx.recv().expect("MPSC Communication channel broke");
+    
+            info!("Incomming message from SHELL => {:?}", mess_type);
+    
             {
-                warn!("{e}");
-                thread::sleep(time::Duration::from_secs(1));
+                let mut lock = ring.lock().unwrap();
+                while let Err(e) = lock.push(mess_type.clone()) 
+                {
+                    warn!("{e}");
+                    thread::sleep(time::Duration::from_secs(1));
+                }
             }
+            info!("Pushed message {mess_type:?} to ring buffer")
         }
+
     }
 
 }

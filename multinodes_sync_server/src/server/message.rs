@@ -9,5 +9,4 @@ pub enum SyncMessageType {
     NoFence,
     Fence(u32),
     Terminate,
-    Done,
 }
