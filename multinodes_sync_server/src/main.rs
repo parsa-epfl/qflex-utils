@@ -1,26 +1,20 @@
-// @inspired from https://github.com/OJarrisonn/diysh
-
-use clap::Parser;
-
-// mod shell;
-mod server;
-use server::message::SyncMessageType;
-
-
 use std::thread;
 use std::sync::mpsc::{self, SyncSender, Receiver};
 
-use server::SyncServer;
 
 #[macro_use] extern crate log;
 use simplelog::*;
 use std::fs::File;
-// use std::path::PathBuf;
+use clap::Parser;
 
+// No Mod because diysh is installed as a custom package
 use diysh::shell::Shell;
 use diysh::commands::definition::CommandDefinition;
 use diysh::commands::argument::ArgType;
 
+mod server;
+use server::SyncServer;
+use server::message::ChannelMessage;
 
 fn main()
 {
@@ -39,47 +33,44 @@ fn main()
             WriteLogger::new(LevelFilter::Info, log_config.clone(), File::create(args.logfile).unwrap()),
         ]
     ).unwrap();
- 
+
 
     let mut server = SyncServer::new(
-        args.socket,
-        args.budget,
         args.nb_of_slave,
+        args.budget,
+        args.socket,
     );
 
 
     if args.shell {
-        let (tx, rx): (SyncSender<SyncMessageType>, Receiver<SyncMessageType>) = mpsc::sync_channel(0);
-
-        thread::spawn(move || {
-            server.listen(Some(rx)).unwrap();
-        });
+        let (tx, rx): (SyncSender<ChannelMessage>, Receiver<ChannelMessage>) = mpsc::sync_channel(0);
+        server.attach_channel(Option::from(rx));
 
         let mut shell = Shell::new(tx);
         set_shell(&mut shell);
-    
-    
-        loop {
-            shell.read_and_run();
-        }
-    }   
-    else 
-    {
-        let handle = thread::spawn(move || {
-            server.listen(None).unwrap();
+
+        thread::spawn(move || {
+            server.listen().unwrap();
         });
 
+
+        loop { shell.read_and_run(); }
+    }
+    else
+    {
+        let handle = thread::spawn(move || { server.listen().unwrap(); });
         handle.join().unwrap();
     }
 
+
 }
 
-fn set_shell(shell: &mut diysh::shell::Shell<SyncMessageType>)
+fn set_shell(shell: &mut diysh::shell::Shell<ChannelMessage>)
 {
 
     shell.set_sparse(false)
         .set_prompt("(SS) > ")
-        .set_log_directory("/tmp/diysh/")
+        .set_log_directory("./shell_log/")
         .register_help()
         .register_history()
         .register_exit()
@@ -87,7 +78,7 @@ fn set_shell(shell: &mut diysh::shell::Shell<SyncMessageType>)
         .register_command(CommandDefinition::new("stop")
         .set_description("Send stop message")
         .set_callback(|shell, _args,| {
-            shell.tx.send(SyncMessageType::Stop).unwrap();
+            shell.tx.send(ChannelMessage::Stop).unwrap();
             info!("Send 'stop' from shell");
         })
         .build())
@@ -95,7 +86,7 @@ fn set_shell(shell: &mut diysh::shell::Shell<SyncMessageType>)
         .register_command(CommandDefinition::new("start")
         .set_description("Send stop message")
         .set_callback(|shell, _args,| {
-            shell.tx.send(SyncMessageType::Start).unwrap();
+            shell.tx.send(ChannelMessage::Start).unwrap();
             info!("Send 'start' from shell");
         })
         .build())
@@ -104,7 +95,7 @@ fn set_shell(shell: &mut diysh::shell::Shell<SyncMessageType>)
         .set_description("txt:str - Make a snapshot with filename")
         .add_arg(ArgType::Str)
         .set_callback(|shell, args,| {
-            shell.tx.send(SyncMessageType::Snap(args[0].get_str().unwrap())).unwrap();
+            shell.tx.send(ChannelMessage::Snap(args[0].get_str().unwrap())).unwrap();
             info!("Send 'snap' from shell");
         })
         .build())
@@ -115,7 +106,7 @@ fn set_shell(shell: &mut diysh::shell::Shell<SyncMessageType>)
         .set_callback(|shell, args,| {
             let budget:u32 = args[0].get_int().unwrap().abs() as u32;
             
-            shell.tx.send(SyncMessageType::Fence(budget)).unwrap();
+            shell.tx.send(ChannelMessage::Fence(budget)).unwrap();
             info!("Send 'fence ({budget})' from shell");
         })
         .build())
@@ -123,7 +114,7 @@ fn set_shell(shell: &mut diysh::shell::Shell<SyncMessageType>)
         .register_command(CommandDefinition::new("nofence")
         .set_description("Remove budget on guests")
         .set_callback(|shell, _args,| {
-            shell.tx.send(SyncMessageType::NoFence).unwrap();
+            shell.tx.send(ChannelMessage::NoFence).unwrap();
             info!("Send 'nofence' from shell");
         })
         .build())
@@ -131,7 +122,7 @@ fn set_shell(shell: &mut diysh::shell::Shell<SyncMessageType>)
         .register_command(CommandDefinition::new("terminate")
         .set_description("text:str - Send terminate message")
         .set_callback(|shell, _args,| {
-            shell.tx.send(SyncMessageType::Terminate).unwrap();
+            shell.tx.send(ChannelMessage::Terminate).unwrap();
             info!("Send 'terminate' from shell");
         })
         .build());

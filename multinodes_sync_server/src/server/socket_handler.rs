@@ -1,80 +1,96 @@
 use std::{
-    os::unix::net::UnixStream, 
-    sync::{Arc, Barrier, Mutex}, 
     io::{Read, Write},
+    os::unix::net::UnixStream,
+    sync::{Arc, Barrier, Condvar, Mutex},
 };
 
-use bincode::config::{
-    self,
-    Configuration,
-    LittleEndian,
-    Fixint,
-};
+use bincode::config::{self, Configuration, Fixint, LittleEndian};
 
+use super::{circular_buffer::CircularBuffer, message::SyncMessageType};
 
-use super::{message::SyncMessageType, circular_buffer::CircularBuffer};
+const FRAME_BYTE_SIZE:              usize   = 256;
+const QFLEX_MESSAGE_SIZE:           usize   = 8;
+const QFLEX_END_OF_BUDGET_MESSAGE:  &str    = "DONE";
 
-const QFLEX_MESSAGE_SIZE: usize         = 8;
-const MAX_FRAME_BYTE_SIZE: usize        = 256;
-const QFLEX_END_OF_BUDGET_MESSAGE: &str = "DONE";
-
-const SERIALIZE_CONFIG: Configuration<LittleEndian, Fixint> =  
+const SERIALIZE_CONFIG: Configuration<LittleEndian, Fixint> =
     config::standard()
         .with_little_endian()
         .with_fixed_int_encoding();
 
-
-
-
-pub struct SocketHandler{}
+pub struct SocketHandler
+{
+    stream:         UnixStream,
+    ready_lock:     Arc<Barrier>,
+    stop_lock:      Arc<(Mutex<bool>, Condvar)>,
+    buffer_lock:    Arc<Mutex<CircularBuffer<SyncMessageType>>>,
+    read_ptr:       usize
+    // starting_budget: u32,
+}
 
 impl SocketHandler
 {
+    pub fn new(
+        stream:         UnixStream,
+        ready_lock:     Arc<Barrier>,
+        stop_lock:      Arc<(Mutex<bool>, Condvar)>,
+        buffer_lock:    Arc<Mutex<CircularBuffer<SyncMessageType>>>,
+        // starting_budget: u32,
+    ) -> Self {
+        Self {
+            stop_lock,
+            stream,
+            ready_lock,
+            buffer_lock,
+            read_ptr: 0,
+        }
+    }
 
-    pub fn handle(
-        mut stream: UnixStream,
-        ready_lock: Arc<Barrier>,
-        starting_budget: u32,
-        buffer: Arc<Mutex<CircularBuffer<SyncMessageType>>>)
+    pub fn handle(&mut self)
     {
         // Send Stop anyway, then set budget
-        SocketHandler::send_message(&mut stream, SyncMessageType::Stop);
-        SocketHandler::send_message(&mut stream, SyncMessageType::Fence(starting_budget));
+        // SocketHandler::send_message(&mut stream, SyncMessageType::Stop);
+        // SocketHandler::send_message(&mut stream, SyncMessageType::Fence(starting_budget));
 
-        let mut from_socket_buffer: [u8; QFLEX_MESSAGE_SIZE] = [0; QFLEX_MESSAGE_SIZE];
+        let mut from_socket_buffer: [u8; QFLEX_MESSAGE_SIZE] =
+            [0; QFLEX_MESSAGE_SIZE];
         let mut str_from_buffer: &str;
 
-        let mut read_ptr: usize = 0;
 
         loop {
             debug!("Consuming buffer");
-            SocketHandler::consuming_buffer(&buffer, &mut read_ptr, &mut stream);
+            self.consuming_buffer();
+
+            debug!("Trying to acquire the start/stop lock");
+            self.wait_for_shell_start();
 
 
             debug!("Starting to wait");
-            ready_lock.wait();
-            
+            self.ready_lock.wait();
+
             debug!("Sending START");
-            SocketHandler::send_message(&mut stream, SyncMessageType::Start);
+            SocketHandler::send_message(&mut self.stream, SyncMessageType::Start);
 
             debug!("Starting to wait for {QFLEX_END_OF_BUDGET_MESSAGE}");
             loop {
                 // Empty buffer first
                 from_socket_buffer.fill(0);
 
-                match stream.read(&mut from_socket_buffer[..])
-                {
-                    Ok(_) =>  {
-                        if *from_socket_buffer.first().unwrap() == 0 {continue;}
+                match self.stream.read(&mut from_socket_buffer[..]) {
+                    Ok(_) => {
+                        if *from_socket_buffer.first().unwrap() == 0 {
+                            continue;
+                        }
                         debug!("Received: {:?}", from_socket_buffer);
-                    },
-                    Err(e) => error!("Could not read from stream => {}", e.kind()), 
+                    }
+                    Err(e) => {
+                        error!("Could not read from stream => {}", e.kind())
+                    }
                 }
-                
-                str_from_buffer = std::str::from_utf8(&from_socket_buffer).unwrap();
-                
-                if str_from_buffer.contains(QFLEX_END_OF_BUDGET_MESSAGE)
-                {
+
+                str_from_buffer =
+                    std::str::from_utf8(&from_socket_buffer).unwrap();
+
+                if str_from_buffer.contains(QFLEX_END_OF_BUDGET_MESSAGE) {
                     debug!("Got {QFLEX_END_OF_BUDGET_MESSAGE}, goes to wait");
                     break;
                 }
@@ -82,55 +98,50 @@ impl SocketHandler
         }
     }
 
-    fn send_message(
-        stream: &mut UnixStream, 
-        message: SyncMessageType)
+    fn send_message(stream: &mut UnixStream,  message: SyncMessageType)
     {
-
         //? @see https://github.com/bincode-org/bincode/blob/trunk/docs/spec.md
-        let mut encoded_msg: [u8; MAX_FRAME_BYTE_SIZE] = [0; MAX_FRAME_BYTE_SIZE];
-        bincode::encode_into_slice(&message, &mut encoded_msg, SERIALIZE_CONFIG).unwrap();
+        let mut encoded_msg: [u8; FRAME_BYTE_SIZE] = [0; FRAME_BYTE_SIZE];
+
+        bincode::encode_into_slice(
+            &message,
+            &mut encoded_msg,
+            SERIALIZE_CONFIG,
+        )
+            .unwrap();
         match stream.write(&encoded_msg) {
             Ok(_) => info!("Send message {:?}", message),
             Err(e) => error!("Something went somewhat wrong => '{}'", e.kind()),
         };
-
     }
 
-    fn consuming_buffer(
-        buffer: &Arc<Mutex<CircularBuffer<SyncMessageType>>>, 
-        read_ptr :&mut usize, 
-        stream: &mut UnixStream)
+    fn consuming_buffer(&mut self)
     {
-        let mut is_stopped: bool = false;
 
         loop {
-        
-            let mut lock = buffer.lock().unwrap();
-            let message_type = lock.read(read_ptr);
-            
+            let mut ring_buffer = self.buffer_lock.lock().unwrap();
+            let inside_lock     =  ring_buffer.read(&mut self.read_ptr);
 
-    
-            match message_type {
-                Err(e) => {
-
-                    debug!("{}", e); 
-                    if !is_stopped {break};
-                },
+            match inside_lock
+            {
+                Err(e) => debug!("{}", e),
                 Ok(value) => {
+                    info!("Got value {:?}", value);
+                    SocketHandler::send_message(&mut self.stream, value.clone());
 
-                    info!("Got value {:?}", *value);
-
-                    is_stopped = if *value == SyncMessageType::Stop {true} else {is_stopped};
-                    is_stopped = if *value == SyncMessageType::Start {false} else {is_stopped};
-
-
-                    SocketHandler::send_message(stream, value.clone());
-                
-                },
+                }
             }
-            drop(lock);
-            
         }
     }
-}  
+
+    fn wait_for_shell_start(&self)
+    {
+        let (lock, cvar) = &*self.stop_lock;
+        let mut is_stopped = lock.lock().unwrap();
+        // As long as the value inside the `Mutex<bool>` is `false`, we wait.
+        while *is_stopped
+        {
+            is_stopped = cvar.wait(is_stopped).unwrap();
+        }
+    }
+}
