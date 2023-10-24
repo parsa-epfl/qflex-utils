@@ -47,7 +47,7 @@ impl<T> CircularBuffer<T>
 
         let nb_access = match self.access_counter.get(self.write_ptr) {
             Some(v) => v,
-            None => return Err("Out of bound§")
+            None => return Err("Out of bound")
             
         };
 
