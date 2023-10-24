@@ -35,7 +35,7 @@ fn main()
     ).unwrap();
 
 
-    let mut server = SyncServer::new(
+    let server = SyncServer::new(
         args.nb_of_slave,
         args.budget,
         args.socket,
@@ -44,13 +44,12 @@ fn main()
 
     if args.shell {
         let (tx, rx): (SyncSender<ChannelMessage>, Receiver<ChannelMessage>) = mpsc::sync_channel(0);
-        server.attach_channel(Option::from(rx));
 
         let mut shell = Shell::new(tx);
         set_shell(&mut shell);
 
         thread::spawn(move || {
-            server.listen().unwrap();
+            server.listen(Some(rx)).unwrap();
         });
 
 
@@ -58,7 +57,7 @@ fn main()
     }
     else
     {
-        let handle = thread::spawn(move || { server.listen().unwrap(); });
+        let handle = thread::spawn(move || { server.listen(None).unwrap(); });
         handle.join().unwrap();
     }
 
@@ -76,18 +75,18 @@ fn set_shell(shell: &mut diysh::shell::Shell<ChannelMessage>)
         .register_exit()
         
         .register_command(CommandDefinition::new("stop")
-        .set_description("Send stop message")
+        .set_description("void - Send stop message")
         .set_callback(|shell, _args,| {
             shell.tx.send(ChannelMessage::Stop).unwrap();
-            info!("Send 'stop' from shell");
+            debug!("Send 'stop' from shell");
         })
         .build())
 
         .register_command(CommandDefinition::new("start")
-        .set_description("Send stop message")
+        .set_description("void - Send stop message")
         .set_callback(|shell, _args,| {
             shell.tx.send(ChannelMessage::Start).unwrap();
-            info!("Send 'start' from shell");
+            debug!("Send 'start' from shell");
         })
         .build())
 
@@ -96,34 +95,34 @@ fn set_shell(shell: &mut diysh::shell::Shell<ChannelMessage>)
         .add_arg(ArgType::Str)
         .set_callback(|shell, args,| {
             shell.tx.send(ChannelMessage::Snap(args[0].get_str().unwrap())).unwrap();
-            info!("Send 'snap' from shell");
+            debug!("Send 'snap' from shell");
         })
         .build())
 
         .register_command(CommandDefinition::new("fence")
-        .set_description("Set guest budget")
+        .set_description("budget:u32 - Set guest budget")
         .add_arg(ArgType::Int)
         .set_callback(|shell, args,| {
             let budget:u32 = args[0].get_int().unwrap().abs() as u32;
             
             shell.tx.send(ChannelMessage::Fence(budget)).unwrap();
-            info!("Send 'fence ({budget})' from shell");
+            debug!("Send 'fence ({budget})' from shell");
         })
         .build())
 
         .register_command(CommandDefinition::new("nofence")
-        .set_description("Remove budget on guests")
+        .set_description("void - Remove budget on guests")
         .set_callback(|shell, _args,| {
             shell.tx.send(ChannelMessage::NoFence).unwrap();
-            info!("Send 'nofence' from shell");
+            debug!("Send 'nofence' from shell");
         })
         .build())
 
         .register_command(CommandDefinition::new("terminate")
-        .set_description("text:str - Send terminate message")
+        .set_description("void - Send terminate message")
         .set_callback(|shell, _args,| {
             shell.tx.send(ChannelMessage::Terminate).unwrap();
-            info!("Send 'terminate' from shell");
+            debug!("Send 'terminate' from shell");
         })
         .build());
 

@@ -12,7 +12,12 @@ pub struct CommandDefinition<S> {
 
 impl<S> Clone for CommandDefinition<S> {
     fn clone(&self) -> Self {
-        Self { name: self.name.clone(), arg_list: self.arg_list.clone(), callback: self.callback.clone() , description: self.description.clone()}
+        Self { 
+            name: self.name,
+            arg_list: self.arg_list.clone(), 
+            callback: self.callback.clone() , 
+            description: self.description
+        }
     }
 }
 

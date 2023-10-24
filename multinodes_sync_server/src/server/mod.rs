@@ -23,7 +23,6 @@ pub struct SyncServer {
     socket_barrier: Arc<Barrier>,
     thread_handles: Vec<JoinHandle<()>>,
     stop_lock:      Arc<(Mutex<bool>, Condvar)>,
-    //TODO rx:             Arc<Option<Receiver<ChannelMessage>>>,
     ring_buffer:    Arc<Mutex<CircularBuffer<SyncMessageType>>>,
 }
 
@@ -38,7 +37,6 @@ impl SyncServer {
             budget,
             nb_of_slave,
 
-            // TODO rx:             Arc::new(None),
             socket_path:    PathBuf::from(socket_path),
             ring_buffer:    Arc::new(
                             Mutex::new(
@@ -51,7 +49,7 @@ impl SyncServer {
         }
     }
 
-    pub fn listen(mut self) -> std::io::Result<()> {
+    pub fn listen(mut self, rx: Option<Receiver<ChannelMessage>>) -> std::io::Result<()> {
 
         // Delete socket file if already exist
         if self.socket_path.exists() { fs::remove_file(&self.socket_path).unwrap(); }
@@ -64,19 +62,17 @@ impl SyncServer {
 
         info!("Server started, waiting for clients on {}",self.socket_path.display());
 
-        // TODO Fix this bellow
-        if self.rx.is_some() {
+        if rx.is_some() {
 
             let receiver_th_lock    = Arc::clone(&self.stop_lock);
             let receiver_th_buffer  = Arc::clone(&mut self.ring_buffer);
-            //TODO let receiver_th_rx      = Arc::clone(&mut self.rx);
 
             self.thread_handles.push(
                 thread::spawn(move || {
                     SyncServer::listen_2_shell(
-                        // TODO receiver_th_rx,
+                       rx.unwrap(),
                         receiver_th_lock,
-                        receiver_th_buffer
+                        receiver_th_buffer,
                     );
                 })
             );
@@ -113,7 +109,7 @@ impl SyncServer {
     }
 
     fn listen_2_shell(
-        //TODO rx: Arc<Option<Receiver<ChannelMessage>>>,
+        rx: Receiver<ChannelMessage>,
         stop_lock: Arc<(Mutex<bool>, Condvar)>,
         ring_buffer: Arc<Mutex<CircularBuffer<SyncMessageType>>>,
 
@@ -121,8 +117,7 @@ impl SyncServer {
         info!("Starting channel listener threads");
 
         loop {
-            let mess_type =
-                rx.unwrap().recv().expect("MPSC Communication channel broke");
+            let mess_type = rx.recv().expect("MPSC Communication channel broke");
 
             info!("Incomming message from SHELL => {:?}", mess_type);
 
@@ -177,10 +172,5 @@ impl SyncServer {
 
             Err(err) => error!("Ouch, problem in incoming request, ({err})"),
         }
-    }
-
-    pub fn attach_channel(&mut self, rx: Option<Receiver<ChannelMessage>>)
-    {
-        self.rx = Arc::new(rx);
     }
 }
