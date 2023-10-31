@@ -43,7 +43,7 @@ impl SyncServer {
                                 CircularBuffer::new(
                                     256,
                                     nb_of_slave))),
-            stop_lock:      Arc::new((Mutex::new(false), Condvar::new())),
+            stop_lock:      Arc::new((Mutex::new(true), Condvar::new())),
             socket_barrier: Arc::new(Barrier::new(nb_of_slave.into())),
             thread_handles: Vec::with_capacity(usize::from(nb_of_slave) + 1)
         }
@@ -61,6 +61,9 @@ impl SyncServer {
         };
 
         info!("Server started, waiting for clients on {}",self.socket_path.display());
+
+
+        let with_buffer = rx.is_some();
 
         if rx.is_some() {
 
@@ -81,7 +84,7 @@ impl SyncServer {
 
 
         for stream in listener.incoming() {
-            self.accept_incoming_connection(stream);
+            self.accept_incoming_connection(stream, with_buffer);
         }
 
         for handle in self.thread_handles {
@@ -145,7 +148,7 @@ impl SyncServer {
 
     }
 
-    fn accept_incoming_connection(&mut self, unixsocket: Result<UnixStream, std::io::Error  >)
+    fn accept_incoming_connection(&mut self, unixsocket: Result<UnixStream, std::io::Error  >, with_buffer: bool)
     {
 
         let socket_stop_lock_ptr = Arc::clone(&self.stop_lock);
@@ -162,8 +165,8 @@ impl SyncServer {
                                 stream,
                                 socket_barrier_ptr,
                                 socket_stop_lock_ptr,
-                                socket_buffer_ptr
-                            ).handle();
+                                socket_buffer_ptr,
+                            ).handle(with_buffer);
                         }
                     )
                 )

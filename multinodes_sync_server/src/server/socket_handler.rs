@@ -24,7 +24,6 @@ pub struct SocketHandler
     stop_lock:      Arc<(Mutex<bool>, Condvar)>,
     buffer_lock:    Arc<Mutex<CircularBuffer<SyncMessageType>>>,
     read_ptr:       usize
-    // starting_budget: u32,
 }
 
 impl SocketHandler
@@ -34,7 +33,6 @@ impl SocketHandler
         ready_lock:     Arc<Barrier>,
         stop_lock:      Arc<(Mutex<bool>, Condvar)>,
         buffer_lock:    Arc<Mutex<CircularBuffer<SyncMessageType>>>,
-        // starting_budget: u32,
     ) -> Self {
         Self {
             stop_lock,
@@ -45,11 +43,8 @@ impl SocketHandler
         }
     }
 
-    pub fn handle(&mut self)
+    pub fn handle(&mut self, with_buffer: bool)
     {
-        // Send Stop anyway, then set budget
-        // SocketHandler::send_message(&mut stream, SyncMessageType::Stop);
-        // SocketHandler::send_message(&mut stream, SyncMessageType::Fence(starting_budget));
 
         let mut from_socket_buffer: [u8; QFLEX_MESSAGE_SIZE] =
             [0; QFLEX_MESSAGE_SIZE];
@@ -57,14 +52,19 @@ impl SocketHandler
 
 
         loop {
-            debug!("Consuming buffer");
-            self.consuming_buffer();
+            // TODO; this kind of behaviour should be refactored into a SocketFactory 
+            // or another type of creational pattern
+            if with_buffer
+            {
+                debug!("Consuming buffer");
+                self.consuming_buffer();
+            }
 
-            debug!("Trying to acquire the start/stop lock");
+            info!("Trying to acquire the start/stop lock");
             self.wait_for_shell_start();
 
 
-            debug!("Starting to wait");
+            info!("Starting to wait");
             self.ready_lock.wait();
 
             debug!("Sending START");
@@ -124,7 +124,10 @@ impl SocketHandler
 
             match inside_lock
             {
-                Err(e) => debug!("{}", e),
+                Err(e) =>  { 
+                    debug!("{}", e);
+                    break;
+                },
                 Ok(value) => {
                     info!("Got value {:?}", value);
                     SocketHandler::send_message(&mut self.stream, value.clone());
